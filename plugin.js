@@ -82,6 +82,16 @@
 
   const sanitizeDeal = (d) => {
     if (!d || typeof d !== "object") return null;
+    if (d.pick) {
+      const url = safeAmazonUrl(d.url);
+      if (!url) return null;
+      return {
+        pick: true, asin: String(d.asin || ""), title: String(d.title || d.asin || "Hand-picked deal"),
+        brand: d.brand ? String(d.brand) : "", image: null,
+        condition: String(d.condition || "Used - Like New"), note: d.condition_note ? String(d.condition_note) : "",
+        pct: -1, url,
+      };
+    }
     const resale = Number(d.resale_price), list = Number(d.new_price);
     const url = safeAmazonUrl(d.url);
     if (!url || !(resale > 0) || !(list > resale)) return null;
@@ -177,6 +187,8 @@
       background: var(--as-red); border-radius: 4px;
       box-shadow: 0 2px 6px rgba(140,47,57,.3);
     }
+    .badge.pick { background: var(--as-gold, #B08D57); box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+    .card .pickinfo { margin-top: auto; }
     .thumb {
       height: 150px; border-radius: 8px; display: grid; place-items: center; overflow: hidden;
       background: #F5F1EA; border: 1px solid var(--as-line);
@@ -286,10 +298,21 @@
       this.#els.grid.innerHTML = `<div class="skeleton"></div>`.repeat(3);
       this.#els.count.textContent = "Scanning warehouse…";
       const src = this.getAttribute("src") || "data.json";
-      try {
-        const res = await fetch(src, { signal: this.#abort.signal, cache: "no-cache" });
+      const picksSrc = this.getAttribute("picks") || "picks.json";
+      const get = async (url) => {
+        const res = await fetch(url, { signal: this.#abort.signal, cache: "no-cache" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        this.#ingest(await res.json(), false);
+        return res.json();
+      };
+      try {
+        const [data, picks] = await Promise.allSettled([get(src), get(picksSrc)]);
+        if (data.reason?.name === "AbortError" || picks.reason?.name === "AbortError") return;
+        if (data.status === "rejected" && picks.status === "rejected") throw data.reason;
+        const base = data.status === "fulfilled" ? data.value : {};
+        const deals = Array.isArray(base) ? base : (base?.deals || []);
+        const pickList = picks.status === "fulfilled" ? (Array.isArray(picks.value) ? picks.value : picks.value?.picks || []) : [];
+        const meta = Array.isArray(base) ? {} : base || {};
+        this.#ingest({ ...meta, deals: [...deals, ...pickList.map((p) => ({ ...p, pick: true }))] }, false);
       } catch (err) {
         if (err.name === "AbortError") return;
         if (this.hasAttribute("no-demo")) {
@@ -313,9 +336,13 @@
       this.#els.demo.hidden = !isDemo;
       const updated = this.#meta.updated_at ? new Date(this.#meta.updated_at) : null;
       const when = updated && !isNaN(updated) ? updated.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : null;
-      this.#els.stamp.textContent = when ? `Updated ${when}` : "";
+      const priced = this.#deals.some((d) => !d.pick);
+      this.#root.querySelector(".live").firstChild.textContent = priced || isDemo ? "Live price drops" : "Hand-picked deals";
+      this.#els.stamp.textContent = when && priced ? `Updated ${when}` : "";
       this.#els.disclaimer.textContent = isDemo
         ? "Demo listings with sample prices for layout testing only."
+        : !priced
+        ? "Hand-picked open-box and like-new deals. Check the current price and condition on Amazon before you buy."
         : `Prices and availability are accurate as of ${when ?? "the time indicated"} and are subject to change. Any price and availability information displayed on Amazon at the time of purchase will apply.`;
       this.#render();
     }
@@ -351,7 +378,9 @@
       const ms = performance.now() - t0;
       this.#els.count.innerHTML = q
         ? `<b>${list.length}</b> match${list.length === 1 ? "" : "es"} · ${ms.toFixed(1)} ms`
-        : `Top <b>${list.length}</b> deepest drops of ${this.#deals.length}`;
+        : this.#deals.some((d) => !d.pick)
+          ? `Top <b>${list.length}</b> deepest drops of ${this.#deals.length}`
+          : `<b>${list.length}</b> hand-picked deal${list.length === 1 ? "" : "s"}${this.#deals.length > list.length ? ` of ${this.#deals.length}` : ""}`;
     }
 
     // Cards are built once per dataset and re-used across searches.
@@ -364,6 +393,18 @@
       el.setAttribute("role", "listitem");
       el.setAttribute("part", "card");
       const initials = esc((d.brand || d.title).replace(/[^A-Za-z0-9 ]/g, "").split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "★");
+      if (d.pick) {
+        el.innerHTML = `
+        <span class="badge pick">Hand-picked</span>
+        <div class="thumb"><span class="mono" aria-hidden="true">${initials}</span></div>
+        ${d.brand ? `<div class="brandline">${esc(d.brand)}</div>` : ""}
+        <h3 class="title" title="${esc(d.title)}">${esc(d.title)}</h3>
+        <div class="cond"><strong>Condition: ${esc(d.condition)}.</strong>${d.note ? ` ${esc(d.note)}` : ""}</div>
+        <div class="savings pickinfo"><span>Open-box savings</span><span>See today's price on Amazon</span></div>
+        <a class="cta" part="cta" href="${esc(d.url)}" target="_blank" rel="nofollow sponsored noopener">CHECK PRICE ⚡</a>`;
+        this.#cards.set(key, el);
+        return el;
+      }
       el.innerHTML = `
         <span class="badge">-${d.pct}% OFF!</span>
         <div class="thumb">${d.image ? `<img src="${esc(d.image)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : `<span class="mono" aria-hidden="true">${initials}</span>`}</div>
