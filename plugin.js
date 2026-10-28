@@ -1,5 +1,5 @@
 /*!
- * Amazon Resale Sniper — <amazon-sniper> Web Component
+ * Resale Sniper — <amazon-sniper> Web Component
  * Zero dependencies. Drop-in:  <script src="plugin.js" defer></script>
  *                              <amazon-sniper></amazon-sniper>
  *
@@ -239,7 +239,7 @@
       this.#root.innerHTML = `
         <style>${CSS}</style>
         <header>
-          <h2 class="brand"><span class="y">Amazon</span> Resale <span class="p">Sniper</span></h2>
+          <h2 class="brand"><span class="y">Resale</span> <span class="p">Sniper</span></h2>
           <span class="live" part="live">Live price drops<span class="demo" hidden>Demo data</span></span>
         </header>
         <label class="search">
