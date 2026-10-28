@@ -58,7 +58,7 @@
   const safeAmazonUrl = (raw) => {
     try {
       const u = new URL(raw);
-      return u.protocol === "https:" && /(^|\.)amazon\.[a-z.]{2,8}$/i.test(u.hostname) ? u.href : null;
+      return u.protocol === "https:" && (/(^|\.)amazon\.[a-z.]{2,8}$/i.test(u.hostname) || /^amzn\.to$/i.test(u.hostname)) ? u.href : null;
     } catch { return null; }
   };
   const safeImageUrl = (raw) => {
